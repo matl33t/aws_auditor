@@ -15,7 +15,7 @@ module SportNginAwsAuditor
         @instances = rds.describe_db_instances.db_instances.map do |instance|
           next unless instance.db_instance_status.to_s == 'available'
           new(instance, account_id, tag_name, rds)
-        end.compact
+        end.compact.sort_by { |ri| [ri.engine, ri.instance_type] }
       end
 
       def get_reserved_instances
@@ -23,7 +23,7 @@ module SportNginAwsAuditor
         @reserved_instances = rds.describe_reserved_db_instances.reserved_db_instances.map do |instance|
           next unless instance.state.to_s == 'active'
           new(instance)
-        end.compact
+        end.compact.sort_by { |ri| [ri.engine, ri.instance_type] }
       end
     end
 
