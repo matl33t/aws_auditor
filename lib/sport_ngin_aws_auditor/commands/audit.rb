@@ -12,6 +12,6 @@ command 'audit' do |c|
   c.action do |global_options, options, args|
     require_relative '../scripts/audit'
     raise ArgumentError, 'You must specify an AWS account' unless args.first
-    SportNginAwsAuditor::Scripts::Audit.execute(args.first, options, global_options)
+    SportNginAwsAuditor::Scripts::Audit.new(args.first, options, global_options).execute
   end
 end
