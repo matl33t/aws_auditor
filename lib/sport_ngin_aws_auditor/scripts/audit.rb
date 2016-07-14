@@ -4,16 +4,18 @@ require_relative "../notify_slack"
 module SportNginAwsAuditor
   module Scripts
     class Audit
-      extend AWSWrapper
+      include AWSWrapper
 
-      class << self
-        attr_accessor :options
+      attr_accessor :environment, :options, :global_options
+
+      def initialize(environment, options, global_options)
+        self.environment = environment
+        self.options = options
+        self.global_options = global_options
       end
 
-      def self.execute(environment, options=nil, global_options=nil)
+      def execute
         aws(environment, global_options[:aws_roles])
-        @options = options
-        slack = options[:slack]
         no_selection = !(options[:ec2] || options[:rds] || options[:cache])
 
         if options[:no_tag]
@@ -22,65 +24,73 @@ module SportNginAwsAuditor
           tag_name = options[:tag]
         end
 
-        if !slack
-          print "Gathering info, please wait..."; print "\r"
-        else
+        if options[:slack]
           puts "Condensed results from this audit will print into Slack instead of directly to an output."
+        else
+          puts "Gathering info, please wait..."
         end
 
         data = gather_data("EC2Instance", tag_name) if options[:ec2] || no_selection
-        print_data(slack, environment, data, "EC2Instance") if options[:ec2] || no_selection
+        print_data(data, "EC2Instance") if options[:ec2] || no_selection
 
         data = gather_data("RDSInstance", tag_name) if options[:rds] || no_selection
-        print_data(slack, environment, data, "RDSInstance") if options[:rds] || no_selection
+        print_data(data, "RDSInstance") if options[:rds] || no_selection
 
         data = gather_data("CacheInstance", tag_name) if options[:cache] || no_selection
-        print_data(slack, environment, data, "CacheInstance") if options[:cache] || no_selection
+        print_data(data, "CacheInstance") if options[:cache] || no_selection
       end
 
-      def self.gather_data(class_type, tag_name)
+      def gather_data(class_type, tag_name)
         klass = SportNginAwsAuditor.const_get(class_type)
 
         if options[:instances]
+          data = {}
           instances = klass.get_instances(tag_name)
-          instances_with_tag = klass.filter_instances_with_tags(instances)
-          instances_without_tag = klass.filter_instance_without_tags(instances)
-          instance_hash = klass.instance_count_hash(instances_without_tag)
-          klass.add_instances_with_tag_to_hash(instances_with_tag, instance_hash)
-          return instance_hash
+          permanent_instances = klass.filter_instance_without_tags(instances)
+          temporary_instances = klass.filter_instances_with_tags(instances)
+          data[:permanent] = klass.instance_count_hash(permanent_instances)
+          data[:temporary] = klass.instance_count_hash(temporary_instances)
+          data
         elsif options[:reserved]
-          return klass.instance_count_hash(klass.get_reserved_instances)
+          { reserved: klass.instance_count_hash(klass.get_reserved_instances) }
         else
-          return klass.compare(tag_name)
+          klass.compare(tag_name)
         end
       end
 
-      def self.print_data(slack, environment, data, class_type)
-        if slack
+      def print_data(data, class_type)
+        if options[:slack]
           print_to_slack(data, class_type, environment)
         elsif options[:reserved] || options[:instances]
           puts header(class_type)
-          data.each{ |key, value| say "<%= color('#{key}: #{value}', :white) %>" }
+          data.each do |type, counts|
+            puts "#{type.capitalize} Instances" unless counts.empty?
+            counts.each do |name, count|
+              say "<%= color('  ↳> #{name}: #{count}', :white) %>"
+            end
+          end
         else
           puts header(class_type)
-          data.each{ |key, value| colorize(key, value) }
+          data.each do |type, counts|
+            puts "#{type.capitalize} Instances" unless counts.empty?
+            counts.sort_by { |name, count| Rational(count) }.reverse.each do |name, count|
+              if type == :unutilized
+                say "<%= color('  ↳> #{name}: #{count}', :red) %>"
+              elsif type == :temporary
+                say "<%= color('  ↳> #{name}: #{count}', :blue) %>"
+              elsif type == :permanent
+                if Rational(count) == 1
+                  say "<%= color('  ↳> #{name}: #{count}', :green) %>"
+                else
+                  say "<%= color('  ↳> #{name}: #{count}', :yellow) %>"
+                end
+              end
+            end
+          end
         end
       end
 
-      def self.colorize(key, value)
-        if key.include?(" with tag")
-          key, value = modify_tag_prints(key, value)
-          say "<%= color('#{key}: #{value}', :blue) %>"
-        elsif value < 0
-          say "<%= color('#{key}: #{value}', :yellow) %>"
-        elsif value == 0
-          say "<%= color('#{key}: #{value}', :green) %>"
-        elsif value > 0 
-          say "<%= color('#{key}: #{value}', :red) %>"
-        end
-      end
-
-      def self.print_to_slack(instances_hash, class_type, environment)
+      def print_to_slack(instances_hash, class_type, environment)
         discrepancy_hash = Hash.new
         instances_hash.each do |key, value|
           if value != 0
@@ -94,11 +104,11 @@ module SportNginAwsAuditor
           slack_job = NotifySlack.new("All #{class_type} instances for #{environment} are up to date.")
           slack_job.perform
         else
-          print_discrepancies(discrepancy_hash, class_type, environment)
+          print_discrepancies(discrepancy_hash, class_type)
         end
       end
 
-      def self.print_discrepancies(discrepancy_hash, class_type, environment)
+      def print_discrepancies(discrepancy_hash, class_type)
         to_print = "Some #{class_type} instances for #{environment} are out of sync:\n"
         to_print << "#{header(class_type)}\n"
 
@@ -113,13 +123,7 @@ module SportNginAwsAuditor
         slack_job.perform
       end
 
-      def self.modify_tag_prints(key, value)
-        key = key.dup # because key is a frozen string right now
-        key.slice!(" with tag")
-        return key, "*" << value.to_s
-      end
-
-      def self.header(type, length = 50)
+      def header(type, length = 50)
         type.upcase!.slice! "INSTANCE"
         half_length = (length - type.length)/2.0 - 1
         [
@@ -128,7 +132,6 @@ module SportNginAwsAuditor
           "*" * length
         ].join("\n")
       end
-
     end
   end
 end
