@@ -9,6 +9,7 @@ module SportNginAwsAuditor
       Hash[get_reserved_instances.map { |instance| instance.nil? ? next : [instance.id, instance]}.compact]
     end
 
+    # Builds a hash from instance strings containing total counts
     def instance_count_hash(instances)
       instance_hash = Hash.new()
       instances.each do |instance|
@@ -18,28 +19,46 @@ module SportNginAwsAuditor
       instance_hash
     end
 
-    def add_instances_with_tag_to_hash(instances_to_add, instance_hash)
-      instances_to_add.each do |instance|
-        next if instance.nil?
-        key = instance.to_s << " with tag"
-        instance_hash[key] = instance_hash.has_key?(key) ? instance_hash[key] + 1 : 1
-      end if instances_to_add
-      instance_hash
-    end
-
+    # generates a hash with { instance type => count }
     def compare(tag_name)
-      differences = Hash.new()
+      differences = {
+        permanent: {},
+        temporary: {},
+        unutilized: {}
+      }
       instances = get_instances(tag_name)
-      instances_with_tag = filter_instances_with_tags(instances)
-      instances_without_tag = filter_instance_without_tags(instances)
-      instance_hash = instance_count_hash(instances_without_tag)
-      ris = instance_count_hash(get_reserved_instances)
-      instance_hash.keys.concat(ris.keys).uniq.each do |key|
-        instance_count = instance_hash.has_key?(key) ? instance_hash[key] : 0
-        ris_count = ris.has_key?(key) ? ris[key] : 0
-        differences[key] = ris_count - instance_count
+
+      temporary_instances = filter_instances_with_tags(instances)
+      permanent_instances = filter_instance_without_tags(instances)
+
+      permanent_instance_counts = instance_count_hash(permanent_instances)
+      temporary_instance_counts = instance_count_hash(temporary_instances)
+      reserved_instance_counts = instance_count_hash(get_reserved_instances)
+
+      # generate diff hash
+      permanent_instance_counts.each do |key, instance_count|
+        ri_count = reserved_instance_counts[key] || 0
+        if ri_count > instance_count
+          differences[:permanent][key] = "#{instance_count}/#{instance_count}"
+          reserved_instance_counts[key] -= instance_count
+        else
+          differences[:permanent][key] = "#{ri_count}/#{instance_count}"
+          reserved_instance_counts.delete(key)
+        end
       end
-      add_instances_with_tag_to_hash(instances_with_tag, differences)
+
+      temporary_instance_counts.each do |key, instance_count|
+        ri_count = reserved_instance_counts[key] || 0
+        if ri_count > instance_count
+          differences[:temporary][key] = "#{instance_count}/#{instance_count}"
+          reserved_instance_counts[key] -= instance_count
+        else
+          differences[:temporary][key] = "#{ri_count}/#{instance_count}"
+          reserved_instance_counts.delete(key)
+        end
+      end
+
+      differences[:unutilized] = reserved_instance_counts
       differences
     end
 
