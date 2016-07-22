@@ -1,7 +1,6 @@
 module SportNginAwsAuditor
-	module InstanceHelper
-
-		def instance_hash
+  module InstanceHelper
+    def instance_hash
       Hash[get_instances.map { |instance| instance.nil? ? next : [instance.id, instance]}.compact]
     end
 
@@ -19,12 +18,15 @@ module SportNginAwsAuditor
       instance_hash
     end
 
-    # generates a hash with { instance type => count }
+    # Generates a hash with { instance type => count }
+    # by calculating the difference of on-demand and reserved instances
     def compare(tag_name)
       differences = {
-        permanent: {},
-        temporary: {},
-        unutilized: {}
+        fully_reserved_permanent: {},
+        insufficiently_reserved_permanent: {},
+        fully_reserved_temporary: {},
+        insufficiently_reserved_temporary: {},
+        unutilized_reserved: {}
       }
       instances = get_instances(tag_name)
 
@@ -39,10 +41,13 @@ module SportNginAwsAuditor
       permanent_instance_counts.each do |key, instance_count|
         ri_count = reserved_instance_counts[key] || 0
         if ri_count > instance_count
-          differences[:permanent][key] = "#{instance_count}/#{instance_count}"
+          differences[:fully_reserved_permanent][key] = "#{instance_count}/#{instance_count}"
           reserved_instance_counts[key] -= instance_count
+        elsif ri_count == instance_count
+          differences[:fully_reserved_permanent][key] = "#{instance_count}/#{instance_count}"
+          reserved_instance_counts.delete(key)
         else
-          differences[:permanent][key] = "#{ri_count}/#{instance_count}"
+          differences[:insufficiently_reserved_permanent][key] = "#{ri_count}/#{instance_count}"
           reserved_instance_counts.delete(key)
         end
       end
@@ -50,16 +55,147 @@ module SportNginAwsAuditor
       temporary_instance_counts.each do |key, instance_count|
         ri_count = reserved_instance_counts[key] || 0
         if ri_count > instance_count
-          differences[:temporary][key] = "#{instance_count}/#{instance_count}"
+          differences[:fully_reserved_temporary][key] = "#{instance_count}/#{instance_count}"
           reserved_instance_counts[key] -= instance_count
+        elsif ri_count > instance_count
+          differences[:fully_reserved_temporary][key] = "#{instance_count}/#{instance_count}"
+          reserved_instance_counts.delete(key)
         else
-          differences[:temporary][key] = "#{ri_count}/#{instance_count}"
+          differences[:insufficiently_reserved_temporary][key] = "#{ri_count}/#{instance_count}"
           reserved_instance_counts.delete(key)
         end
       end
 
-      differences[:unutilized] = reserved_instance_counts
+      differences[:unutilized_reserved] = reserved_instance_counts
       differences
+    end
+
+    def audit(options)
+      data = {}
+      if options[:instances]
+        instances = get_instances(options[:tag_name])
+        permanent_instances = filter_instance_without_tags(instances)
+        temporary_instances = filter_instances_with_tags(instances)
+        data[:permanent] = instance_count_hash(permanent_instances)
+        data[:temporary] = instance_count_hash(temporary_instances)
+      elsif options[:reserved]
+        data[:reserved] = instance_count_hash(get_reserved_instances)
+      else
+        data = compare(options[:tag_name])
+      end
+
+      if options[:slack]
+        generate_slack_output(data, class_type, environment)
+      elsif options[:html] || options[:email]
+        puts generate_html_output(data)
+      else
+        generate_console_output(data)
+      end
+    end
+
+    def header(length = 50)
+      type = self.name.split('::').last.sub('Instance', '')
+      half_length = (length - type.size)/2.0 - 1
+      [
+        "*" * length,
+        "*" * half_length.floor + " #{type} " + "*" * half_length.ceil,
+        "*" * length
+      ].join("\n")
+    end
+
+    private
+
+    def generate_console_output(data)
+      puts header
+      data.each do |type, counts|
+        puts "#{type.capitalize} Instances" unless counts.empty?
+        counts.sort_by { |name, count| Rational(count) }.reverse.each do |name, count|
+          say "<%= color(' ↳> #{name}: #{count}', :#{color_severity(type)}) %>"
+        end
+      end
+    end
+
+    def color_severity(instance_type, format=:text)
+      case instance_type
+      when :fully_reserved_permanent
+        format == :text ? 'green' : '#82E0AA'
+      when :insufficiently_reserved_permanent
+        format == :text ? 'yellow' : '#F9E79F'
+      when :fully_reserved_temporary
+        format == :text ? 'blue' : '#AED6F1'
+      when :insufficiently_reserved_temporary
+        format == :text ? 'blue' : '#AED6F1'
+      when :unutilized_reserved
+        format == :text ? 'red' : '#F1948A'
+      else
+        format == :text ? 'white' : '#F2F3F4'
+      end
+    end
+
+    def generate_html_output(data)
+      td20 = 'td width=20%'
+      td80 = 'td width=80%'
+      aws_service = self.name.split('::').last.sub('Instance', '')
+
+      html << "<h2>#{aws_service} Instances</h2>\n"
+
+      current_type = nil
+      data.each do |type, counts|
+        next if counts.empty?
+
+        html << "<table width=100%><tbody>\n"
+        if current_type != type
+          type_str = type.to_s.split('_').map(&:capitalize).join(' ')
+          html << "<tr bgcolor=#{color_severity(type, :hex)}>\n"
+          html << "<#{td80}>#{type_str} Instances</td></tr>\n"
+          current_type = type
+        end
+
+        counts.sort_by { |name, count| Rational(count) }.reverse.each do |name, count|
+          html << "<tr bgcolor=#e8e8e8>\n"
+          html << "<#{td80}>#{name}</td><#{td20}>#{count}</td></tr>\n"
+        end
+        html << "</tbody></table><br>\n"
+      end
+
+      header + html + footer
+    end
+=begin
+    class HelperThing
+      def initialize
+        @type = :unutilized
+        @ondemand_count = Integer
+        @reserved_count = Integer
+        @instance = Instance
+        @instance_type
+      end
+
+      def fraction
+        @count
+      end
+
+      def difference
+
+      end
+    end
+=end
+
+    def generate_slack_output(data)
+      attachments = []
+      data.each do |type, counts|
+        next if counts.empty?
+        if type == :insufficiently_reserved_permanent || type == :unutilized_reserved
+          counts.sort_by { |name, count| Rational(count) }.reverse.each do |name, count|
+            attachments += {
+              color: color_severity(type, :hex),
+              fallback: "#{name}: #{count}",
+              text: "#{name}: #{count}"
+            }
+          end
+        end
+      end
+
+      attachments
     end
 
     # assuming the value of the tag is in the form: 01/01/2000 like a date
@@ -86,5 +222,5 @@ module SportNginAwsAuditor
       end
       value
     end
-	end
+  end
 end
