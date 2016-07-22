@@ -2,10 +2,11 @@ require 'slack-notifier'
 
 module SportNginAwsAuditor
   class NotifySlack
-    attr_accessor :text, :channel, :webhook, :username, :icon_url, :icon_emoji
+    attr_accessor :text, :attachments, :channel, :webhook, :username, :icon_url, :icon_emoji
 
-    def initialize(text)
+    def initialize(text, attachments=nil)
       self.text = text
+      self.attachments = attachments
       if SportNginAwsAuditor::Config.slack
         self.channel = SportNginAwsAuditor::Config.slack[:channel]
         self.username = SportNginAwsAuditor::Config.slack[:username]
@@ -24,7 +25,7 @@ module SportNginAwsAuditor
                    icon_url: icon_url,
                    http_options: {open_timeout: 10}
                   }
-        Slack::Notifier.new(webhook, options).ping(text)
+        Slack::Notifier.new(webhook, options).ping(text, attachments: attachments)
       end
     end
   end

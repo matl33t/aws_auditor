@@ -85,7 +85,7 @@ module SportNginAwsAuditor
       end
 
       if options[:slack]
-        generate_slack_output(data, class_type, environment)
+        generate_slack_output(data)
       elsif options[:html] || options[:email]
         puts generate_html_output(data)
       else
@@ -160,25 +160,6 @@ module SportNginAwsAuditor
 
       header + html + footer
     end
-=begin
-    class HelperThing
-      def initialize
-        @type = :unutilized
-        @ondemand_count = Integer
-        @reserved_count = Integer
-        @instance = Instance
-        @instance_type
-      end
-
-      def fraction
-        @count
-      end
-
-      def difference
-
-      end
-    end
-=end
 
     def generate_slack_output(data)
       attachments = []
@@ -186,11 +167,11 @@ module SportNginAwsAuditor
         next if counts.empty?
         if type == :insufficiently_reserved_permanent || type == :unutilized_reserved
           counts.sort_by { |name, count| Rational(count) }.reverse.each do |name, count|
-            attachments += {
+            attachments.push({
               color: color_severity(type, :hex),
               fallback: "#{name}: #{count}",
               text: "#{name}: #{count}"
-            }
+            })
           end
         end
       end
@@ -198,7 +179,7 @@ module SportNginAwsAuditor
       attachments
     end
 
-    # assuming the value of the tag is in the form: 01/01/2000 like a date
+    # Assuming the value of the tag is in the form: 01/01/2000 like a date
     def filter_instances_with_tags(instances)
       instances.select do |instance|
         value = gather_instance_tag_date(instance)
@@ -206,7 +187,7 @@ module SportNginAwsAuditor
       end
     end
 
-    # assuming the value of the tag is in the form: 01/01/2000 like a date
+    # Assuming the value of the tag is in the form: 01/01/2000 like a date
     def filter_instance_without_tags(instances)
       instances.select do |instance|
         value = gather_instance_tag_date(instance)

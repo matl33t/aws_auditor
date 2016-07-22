@@ -73,6 +73,8 @@ MESSAGE_END
             slack_job.perform
           else
             to_print = "Some #{class_type} instances for #{environment} are out of sync:\n"
+            slack_job = NotifySlack.new(to_print, out)
+            slack_job.perform
           end
         end
       end
