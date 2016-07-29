@@ -33,13 +33,13 @@ module SportNginAwsAuditor
         self.id = cache_instance.reserved_cache_node_id
         self.name = cache_instance.reserved_cache_node_id
         self.instance_type = cache_instance.cache_node_type
-        self.engine = cache_instance.product_description
+        self.engine = cache_instance.product_description.capitalize
         self.count = cache_instance.cache_node_count
       elsif cache_instance.class.to_s == "Aws::ElastiCache::Types::CacheCluster"
         self.id = cache_instance.cache_cluster_id
         self.name = cache_instance.cache_cluster_id
         self.instance_type = cache_instance.cache_node_type
-        self.engine = cache_instance.engine
+        self.engine = cache_instance.engine.capitalize
         self.count = cache_instance.num_cache_nodes
 
         if tag_name
@@ -57,12 +57,27 @@ module SportNginAwsAuditor
       end
     end
 
-    def to_s
-      "#{engine.capitalize} #{instance_type}"
+    def no_reserved_instance_tag_value
+      tag_value
     end
 
-    def no_reserved_instance_tag_value
-      @tag_value
+    def to_s
+      fields.values.join(' ')
+    end
+
+    def hash
+      fields.hash
+    end
+
+    def eql?(other)
+      fields == other.fields
+    end
+
+    def fields
+      {
+        'Engine' => @engine,
+        'Instance Type' => @instance_type
+      }
     end
   end
 end

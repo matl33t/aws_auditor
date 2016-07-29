@@ -36,7 +36,9 @@ module SportNginAwsAuditor
         elsif options[:email]
           send_email(wrap_html(full_output))
         else
-          puts output
+          output.each do |aws_service, out|
+            puts out
+          end
         end
       end
 

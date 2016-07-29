@@ -82,12 +82,28 @@ module SportNginAwsAuditor
       end
     end
 
-    def to_s
-      "#{platform} #{availability_zone} #{instance_type}"
-    end
-
     def no_reserved_instance_tag_value
       @tag_value
+    end
+
+    def to_s
+      fields.values.join(' ')
+    end
+
+    def hash
+      fields.hash
+    end
+
+    def eql?(other)
+      fields == other.fields
+    end
+
+    def fields
+      {
+        'Platform' => @platform,
+        'Availability Zone' => @availability_zone,
+        'Instance Type' => @instance_type
+      }
     end
 
     def platform_helper(description, vpc=nil)

@@ -9,6 +9,8 @@ require_relative 'sport_ngin_aws_auditor/output'
 require_relative 'sport_ngin_aws_auditor/config'
 require_relative 'sport_ngin_aws_auditor/notify_slack'
 
+require_relative 'sport_ngin_aws_auditor/scripts/audit'
+
 module SportNginAwsAuditor
 
 end

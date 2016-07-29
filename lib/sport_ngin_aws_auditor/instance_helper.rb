@@ -1,3 +1,6 @@
+require 'pastel'
+require 'tty-table'
+
 module SportNginAwsAuditor
   module InstanceHelper
     def instance_hash
@@ -8,12 +11,13 @@ module SportNginAwsAuditor
       Hash[get_reserved_instances.map { |instance| instance.nil? ? next : [instance.id, instance]}.compact]
     end
 
+
     # Builds a hash from instance strings containing total counts
     def instance_count_hash(instances)
       instance_hash = Hash.new()
       instances.each do |instance|
         next if instance.nil?
-        instance_hash[instance.to_s] = instance_hash.has_key?(instance.to_s) ? instance_hash[instance.to_s] + instance.count : instance.count
+        instance_hash[instance] = instance_hash.has_key?(instance) ? instance_hash[instance] + instance.count : instance.count
       end if instances
       instance_hash
     end
@@ -38,31 +42,31 @@ module SportNginAwsAuditor
       reserved_instance_counts = instance_count_hash(get_reserved_instances)
 
       # generate diff hash
-      permanent_instance_counts.each do |key, instance_count|
-        ri_count = reserved_instance_counts[key] || 0
+      permanent_instance_counts.each do |instance, instance_count|
+        ri_count = reserved_instance_counts[instance] || 0
         if ri_count > instance_count
-          differences[:fully_reserved_permanent][key] = "#{instance_count}/#{instance_count}"
-          reserved_instance_counts[key] -= instance_count
+          differences[:fully_reserved_permanent][instance] = "#{instance_count}/#{instance_count}"
+          reserved_instance_counts[instance] -= instance_count
         elsif ri_count == instance_count
-          differences[:fully_reserved_permanent][key] = "#{instance_count}/#{instance_count}"
-          reserved_instance_counts.delete(key)
+          differences[:fully_reserved_permanent][instance] = "#{instance_count}/#{instance_count}"
+          reserved_instance_counts.delete(instance)
         else
-          differences[:insufficiently_reserved_permanent][key] = "#{ri_count}/#{instance_count}"
-          reserved_instance_counts.delete(key)
+          differences[:insufficiently_reserved_permanent][instance] = "#{ri_count}/#{instance_count}"
+          reserved_instance_counts.delete(instance)
         end
       end
 
-      temporary_instance_counts.each do |key, instance_count|
-        ri_count = reserved_instance_counts[key] || 0
+      temporary_instance_counts.each do |instance, instance_count|
+        ri_count = reserved_instance_counts[instance] || 0
         if ri_count > instance_count
-          differences[:fully_reserved_temporary][key] = "#{instance_count}/#{instance_count}"
-          reserved_instance_counts[key] -= instance_count
+          differences[:fully_reserved_temporary][instance] = "#{instance_count}/#{instance_count}"
+          reserved_instance_counts[instance] -= instance_count
         elsif ri_count > instance_count
-          differences[:fully_reserved_temporary][key] = "#{instance_count}/#{instance_count}"
-          reserved_instance_counts.delete(key)
+          differences[:fully_reserved_temporary][instance] = "#{instance_count}/#{instance_count}"
+          reserved_instance_counts.delete(instance)
         else
-          differences[:insufficiently_reserved_temporary][key] = "#{ri_count}/#{instance_count}"
-          reserved_instance_counts.delete(key)
+          differences[:insufficiently_reserved_temporary][instance] = "#{ri_count}/#{instance_count}"
+          reserved_instance_counts.delete(instance)
         end
       end
 
@@ -87,7 +91,7 @@ module SportNginAwsAuditor
       if options[:slack]
         generate_slack_output(data)
       elsif options[:html] || options[:email]
-        puts generate_html_output(data)
+        generate_html_output(data)
       else
         generate_console_output(data)
       end
@@ -106,59 +110,78 @@ module SportNginAwsAuditor
     private
 
     def generate_console_output(data)
-      puts header
+      output = "#{header}\n"
       data.each do |type, counts|
-        puts "#{type.capitalize} Instances" unless counts.empty?
-        counts.sort_by { |name, count| Rational(count) }.reverse.each do |name, count|
-          say "<%= color(' ↳> #{name}: #{count}', :#{color_severity(type)}) %>"
+        next if counts.empty?
+        table_header = nil
+        rows = []
+        counts.sort_by { |instance, count| Rational(count) }.reverse.each do |instance, count|
+          table_header ||= instance.fields.keys + ['Counts']
+          rows << instance.fields.values + [count]
         end
+        table = TTY::Table.new(header: table_header, rows: rows)
+        type_str = type.to_s.split('_').map(&:capitalize).join(' ')
+
+        output << "#{type_str} Instances\n"
+        output << Pastel.new.decorate(table.render(:ascii, padding: [0, 4]), color_severity(type)) + "\n"
       end
+      output
     end
 
     def color_severity(instance_type, format=:text)
       case instance_type
       when :fully_reserved_permanent
-        format == :text ? 'green' : '#82E0AA'
+        format == :text ? :green : '#82E0AA'
       when :insufficiently_reserved_permanent
-        format == :text ? 'yellow' : '#F9E79F'
+        format == :text ? :yellow : '#F9E79F'
       when :fully_reserved_temporary
-        format == :text ? 'blue' : '#AED6F1'
+        format == :text ? :blue : '#AED6F1'
       when :insufficiently_reserved_temporary
-        format == :text ? 'blue' : '#AED6F1'
+        format == :text ? :blue : '#AED6F1'
       when :unutilized_reserved
-        format == :text ? 'red' : '#F1948A'
+        format == :text ? :red : '#F1948A'
       else
-        format == :text ? 'white' : '#F2F3F4'
+        format == :text ? :white : '#F2F3F4'
       end
     end
 
     def generate_html_output(data)
-      td20 = 'td width=20%'
-      td80 = 'td width=80%'
       aws_service = self.name.split('::').last.sub('Instance', '')
-
-      html << "<h2>#{aws_service} Instances</h2>\n"
-
+      html = ''
       current_type = nil
+      padding = "padding: 2px 15px"
+
       data.each do |type, counts|
         next if counts.empty?
 
-        html << "<table width=100%><tbody>\n"
         if current_type != type
           type_str = type.to_s.split('_').map(&:capitalize).join(' ')
-          html << "<tr bgcolor=#{color_severity(type, :hex)}>\n"
-          html << "<#{td80}>#{type_str} Instances</td></tr>\n"
+          html << "<h2 style=\"background-color:#{color_severity(type, :hex)}\">#{aws_service}: #{type_str} Instances</h2>"
           current_type = type
         end
 
-        counts.sort_by { |name, count| Rational(count) }.reverse.each do |name, count|
-          html << "<tr bgcolor=#e8e8e8>\n"
-          html << "<#{td80}>#{name}</td><#{td20}>#{count}</td></tr>\n"
+        table_header = []
+        table_data = []
+        html << "<table style=\"background-color:#e8e8e8; border: 1px solid black;\"><tbody>\n"
+        counts.sort_by { |instance, count| Rational(count) }.reverse.each do |instance, count|
+          table_data.push("<tr>\n")
+          if table_header.empty?
+            instance.fields.keys.each do |field_name|
+              table_header.push("<td style=\"#{padding}; border-right: 1px solid black;\">#{field_name}</td>\n")
+            end
+            table_header.push("<td style=\"#{padding};\">Counts</td>\n")
+          end
+          instance.fields.each do |field_name, field|
+            table_data.push("<td style=\"#{padding}; border-right: 1px solid black;\">#{field}</td>\n")
+          end
+          table_data.push("<td style=\"#{padding};\">#{count}</td></tr>\n")
         end
+        html << table_header.join
+        html << table_data.join
         html << "</tbody></table><br>\n"
       end
 
-      header + html + footer
+      html
     end
 
     def generate_slack_output(data)
@@ -166,11 +189,11 @@ module SportNginAwsAuditor
       data.each do |type, counts|
         next if counts.empty?
         if type == :insufficiently_reserved_permanent || type == :unutilized_reserved
-          counts.sort_by { |name, count| Rational(count) }.reverse.each do |name, count|
+          counts.sort_by { |instance, count| Rational(count) }.reverse.each do |instance, count|
             attachments.push({
               color: color_severity(type, :hex),
-              fallback: "#{name}: #{count}",
-              text: "#{name}: #{count}"
+              fallback: "#{instance}: #{count}",
+              text: "#{instance}: #{count}"
             })
           end
         end
