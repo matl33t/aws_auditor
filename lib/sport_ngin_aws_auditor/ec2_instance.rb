@@ -1,12 +1,21 @@
 require_relative './instance_helper'
 
 module SportNginAwsAuditor
-  class EC2Instance
-    extend InstanceHelper
+  class EC2Instance < AwsInstance
     extend EC2Wrapper
 
     class << self
       attr_accessor :instances, :reserved_instances
+
+      #def compare(tag_name)
+      #  differences = super(tag_name)
+      #  differences[:unutilized_reserved].each do |instance, ri_count|
+      #    if instance.availability_zone == 'Region'
+      #      puts "unused one found"
+      #    end
+      #  end
+      #  differences
+      #end
 
       def get_instances(tag_name=nil)
         return @instances if @instances
@@ -58,10 +67,16 @@ module SportNginAwsAuditor
         self.id = ec2_instance.reserved_instances_id
         self.name = nil
         self.platform = platform_helper(ec2_instance.product_description)
-        self.availability_zone = ec2_instance.availability_zone
         self.instance_type = ec2_instance.instance_type
         self.count = count
         self.stack_name = nil
+
+
+        if ec2_instance.scope == 'Availability Zone'
+          self.availability_zone = ec2_instance.availability_zone
+        elsif ec2_instance.scope == 'Region'
+          self.availability_zone = 'Region'
+        end
       elsif ec2_instance.class.to_s == "Aws::EC2::Types::Instance"
         self.id = ec2_instance.instance_id
         self.name = nil
@@ -94,6 +109,7 @@ module SportNginAwsAuditor
       fields.hash
     end
 
+    # Used to match Reserved Instances and EC2 Instances during comparison
     def eql?(other)
       fields == other.fields
     end
@@ -102,7 +118,7 @@ module SportNginAwsAuditor
       {
         'Platform' => @platform,
         'Availability Zone' => @availability_zone,
-        'Instance Type' => @instance_type
+        'Instance Type' => @instance_type,
       }
     end
 

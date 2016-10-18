@@ -1,8 +1,7 @@
 require_relative './instance_helper'
 
 module SportNginAwsAuditor
-  class RDSInstance
-    extend InstanceHelper
+  class RDSInstance < AwsInstance
     extend RDSWrapper
     extend AWSWrapper
 

@@ -1,8 +1,7 @@
 require_relative './instance_helper'
 
 module SportNginAwsAuditor
-  class CacheInstance
-    extend InstanceHelper
+  class CacheInstance < AwsInstance
     extend CacheWrapper
     extend AWSWrapper
 
