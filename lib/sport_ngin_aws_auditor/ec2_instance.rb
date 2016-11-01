@@ -1,69 +1,42 @@
-require_relative './instance_helper'
-
-class Fraction
-  attr_accessor :numerator, :denominator
-  def initialize(numerator, denominator)
-    @numerator = numerator
-    @denominator = denominator
-  end
-
-  def to_s
-    "#{@numerator}/#{@denominator}"
-  end
-
-  def difference
-    @denominator - @numerator
-  end
-
-  def add(num)
-    @numerator += num
-  end
-
-  def to_f
-    @numerator.to_f / @denominator
-  end
-end
-
-class Someclass
-end
+require_relative './aws_instance'
 
 module SportNginAwsAuditor
   class EC2Instance < AwsInstance
     extend EC2Wrapper
 
     class << self
-      attr_accessor :instances, :reserved_instances
+      def calculate_differences(tag_name)
+        super(tag_name)
 
-      def compare(tag_name)
-        differences = super(tag_name)
-        differences[:unutilized_reserved].dup.each do |instance, ri_count|
+        # postprocess on regional RIs that are left over
+        @unutilized_reserved.dup.each do |instance, ri_count|
           if instance.availability_zone == 'Region' && ri_count > 0
             # find matching insufficiently reserved permanent instances
-            differences[:insufficiently_reserved_permanent].select { |_instance,v| instance.eql?(_instance, true) }.dup.each do |i, fraction|
+            @insufficiently_reserved_permanent.select { |_instance,v| instance.eql?(_instance, true) }.dup.each do |i, fraction|
               if ri_count >= fraction.difference
                 ri_count -= fraction.difference
                 fraction.numerator = fraction.denominator
-                differences[:fully_reserved_permanent][i] = fraction
-                differences[:insufficiently_reserved_permanent].delete(i)
+                @fully_reserved_permanent[i] = fraction
+                @insufficiently_reserved_permanent.delete(i)
               else
                 ri_count = 0
                 fraction.add(ri_count)
               end
 
               if ri_count == 0
-                differences[:unutilized_reserved].delete(instance)
+                @unutilized_reserved.delete(instance)
                 break
               else
-                differences[:unutilized_reserved][instance] = ri_count
+                @unutilized_reserved[instance] = ri_count
               end
             end
 
-            differences[:insufficiently_reserved_temporary].select { |_instance,v| instance.eql?(_instance, true) }.dup.each do |i, fraction|
+            @insufficiently_reserved_temporary.select { |_instance,v| instance.eql?(_instance, true) }.dup.each do |i, fraction|
               if ri_count >= fraction.difference
                 ri_count -= fraction.difference
                 fraction.numerator = fraction.denominator
-                differences[:fully_reserved_temporary][i] = fraction
-                differences[:insufficiently_reserved_temporary].delete(i)
+                @fully_reserved_temporary[i] = fraction
+                @insufficiently_reserved_temporary.delete(i)
               else
                 ri_count = 0
                 fraction.add(ri_count)
@@ -71,15 +44,14 @@ module SportNginAwsAuditor
               end
 
               if ri_count == 0
-                differences[:unutilized_reserved].delete(instance)
+                @unutilized_reserved.delete(instance)
                 break
               else
-                differences[:unutilized_reserved][instance] = ri_count
+                @unutilized_reserved[instance] = ri_count
               end
             end
           end
         end
-        differences
       end
 
       def get_instances(tag_name=nil)

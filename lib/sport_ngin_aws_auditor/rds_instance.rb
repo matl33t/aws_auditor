@@ -1,4 +1,4 @@
-require_relative './instance_helper'
+require_relative './aws_instance'
 
 module SportNginAwsAuditor
   class RDSInstance < AwsInstance
@@ -6,8 +6,6 @@ module SportNginAwsAuditor
     extend AWSWrapper
 
     class << self
-      attr_accessor :instances, :reserved_instances
-
       def get_instances(tag_name=nil)
         return @instances if @instances
         account_id = get_account_id

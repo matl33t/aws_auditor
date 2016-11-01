@@ -1,5 +1,6 @@
 require_relative 'sport_ngin_aws_auditor/version'
 require_relative 'sport_ngin_aws_auditor/convenience_wrappers'
+require_relative 'sport_ngin_aws_auditor/helpers'
 require_relative 'sport_ngin_aws_auditor/ec2_instance'
 require_relative 'sport_ngin_aws_auditor/rds_instance'
 require_relative 'sport_ngin_aws_auditor/cache_instance'

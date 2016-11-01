@@ -38,9 +38,9 @@ module SportNginAwsAuditor
       print_instances
       puts "\n"
     end
-    
+
     def self.all
-      return @stacks if @stacks 
+      return @stacks if @stacks
       @stacks = opsworks.describe_stacks.data[:stacks].map do |stack|
         new(stack)
       end.sort! { |a,b| a.name.downcase <=> b.name.downcase }
@@ -50,14 +50,13 @@ module SportNginAwsAuditor
       @all_instances ||= EC2Instance.instance_hash
     end
 
-    def self.instances_without_stack 
+    def self.instances_without_stack
       all #simply getting all stacks to make sure instance stack_ids is set
       all_instances.map do |id, instance|
-        next if instance.stack_id 
+        next if instance.stack_id
         instance
       end.compact
     end
-
   end
 end
 
