@@ -1,5 +1,32 @@
 require_relative './instance_helper'
 
+class Fraction
+  attr_accessor :numerator, :denominator
+  def initialize(numerator, denominator)
+    @numerator = numerator
+    @denominator = denominator
+  end
+
+  def to_s
+    "#{@numerator}/#{@denominator}"
+  end
+
+  def difference
+    @denominator - @numerator
+  end
+
+  def add(num)
+    @numerator += num
+  end
+
+  def to_f
+    @numerator.to_f / @denominator
+  end
+end
+
+class Someclass
+end
+
 module SportNginAwsAuditor
   class EC2Instance < AwsInstance
     extend EC2Wrapper
@@ -7,15 +34,53 @@ module SportNginAwsAuditor
     class << self
       attr_accessor :instances, :reserved_instances
 
-      #def compare(tag_name)
-      #  differences = super(tag_name)
-      #  differences[:unutilized_reserved].each do |instance, ri_count|
-      #    if instance.availability_zone == 'Region'
-      #      puts "unused one found"
-      #    end
-      #  end
-      #  differences
-      #end
+      def compare(tag_name)
+        differences = super(tag_name)
+        differences[:unutilized_reserved].dup.each do |instance, ri_count|
+          if instance.availability_zone == 'Region' && ri_count > 0
+            # find matching insufficiently reserved permanent instances
+            differences[:insufficiently_reserved_permanent].select { |_instance,v| instance.eql?(_instance, true) }.dup.each do |i, fraction|
+              if ri_count >= fraction.difference
+                ri_count -= fraction.difference
+                fraction.numerator = fraction.denominator
+                differences[:fully_reserved_permanent][i] = fraction
+                differences[:insufficiently_reserved_permanent].delete(i)
+              else
+                ri_count = 0
+                fraction.add(ri_count)
+              end
+
+              if ri_count == 0
+                differences[:unutilized_reserved].delete(instance)
+                break
+              else
+                differences[:unutilized_reserved][instance] = ri_count
+              end
+            end
+
+            differences[:insufficiently_reserved_temporary].select { |_instance,v| instance.eql?(_instance, true) }.dup.each do |i, fraction|
+              if ri_count >= fraction.difference
+                ri_count -= fraction.difference
+                fraction.numerator = fraction.denominator
+                differences[:fully_reserved_temporary][i] = fraction
+                differences[:insufficiently_reserved_temporary].delete(i)
+              else
+                ri_count = 0
+                fraction.add(ri_count)
+                break
+              end
+
+              if ri_count == 0
+                differences[:unutilized_reserved].delete(instance)
+                break
+              else
+                differences[:unutilized_reserved][instance] = ri_count
+              end
+            end
+          end
+        end
+        differences
+      end
 
       def get_instances(tag_name=nil)
         return @instances if @instances
@@ -110,8 +175,13 @@ module SportNginAwsAuditor
     end
 
     # Used to match Reserved Instances and EC2 Instances during comparison
-    def eql?(other)
-      fields == other.fields
+    def eql?(other, ignore_az = false)
+      if ignore_az
+        rm_az = lambda { |f| f.delete('Availability Zone'); f }
+        rm_az.call(fields) == rm_az.call(other.fields)
+      else
+        fields == other.fields
+      end
     end
 
     def fields

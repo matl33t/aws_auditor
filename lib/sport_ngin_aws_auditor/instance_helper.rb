@@ -47,13 +47,13 @@ module SportNginAwsAuditor
           # finds the count of matching reserved instance
           ri_count = reserved_instance_counts[instance] || 0
           if ri_count > instance_count
-            differences[:fully_reserved_permanent][instance] = "#{instance_count}/#{instance_count}"
+            differences[:fully_reserved_permanent][instance] = Fraction.new(instance_count, instance_count)
             reserved_instance_counts[instance] -= instance_count
           elsif ri_count == instance_count
-            differences[:fully_reserved_permanent][instance] = "#{instance_count}/#{instance_count}"
+            differences[:fully_reserved_permanent][instance] = Fraction.new(instance_count, instance_count)
             reserved_instance_counts.delete(instance)
           else
-            differences[:insufficiently_reserved_permanent][instance] = "#{ri_count}/#{instance_count}"
+            differences[:insufficiently_reserved_permanent][instance] = Fraction.new(ri_count, instance_count)
             reserved_instance_counts.delete(instance)
           end
         end
@@ -61,13 +61,13 @@ module SportNginAwsAuditor
         temporary_instance_counts.each do |instance, instance_count|
           ri_count = reserved_instance_counts[instance] || 0
           if ri_count > instance_count
-            differences[:fully_reserved_temporary][instance] = "#{instance_count}/#{instance_count}"
+            differences[:fully_reserved_temporary][instance] = Fraction.new(instance_count, instance_count)
             reserved_instance_counts[instance] -= instance_count
           elsif ri_count > instance_count
-            differences[:fully_reserved_temporary][instance] = "#{instance_count}/#{instance_count}"
+            differences[:fully_reserved_temporary][instance] = Fraction.new(instance_count, instance_count)
             reserved_instance_counts.delete(instance)
           else
-            differences[:insufficiently_reserved_temporary][instance] = "#{ri_count}/#{instance_count}"
+            differences[:insufficiently_reserved_temporary][instance] = Fraction.new(ri_count, instance_count)
             reserved_instance_counts.delete(instance)
           end
         end
@@ -117,7 +117,7 @@ module SportNginAwsAuditor
           next if counts.empty?
           table_header = nil
           rows = []
-          counts.sort_by { |instance, count| Rational(count) }.reverse.each do |instance, count|
+          counts.sort_by { |instance, count| count.to_f }.reverse.each do |instance, count|
             table_header ||= instance.fields.keys + ['Counts']
             rows << instance.fields.values + [count]
           end
@@ -165,7 +165,7 @@ module SportNginAwsAuditor
           table_header = []
           table_data = []
           html << "<table style=\"background-color:#e8e8e8; border: 1px solid black;\"><tbody>\n"
-          counts.sort_by { |instance, count| Rational(count) }.reverse.each do |instance, count|
+          counts.sort_by { |instance, count| count.to_f }.reverse.each do |instance, count|
             table_data.push("<tr>\n")
             if table_header.empty?
               instance.fields.keys.each do |field_name|
@@ -191,7 +191,7 @@ module SportNginAwsAuditor
         data.each do |type, counts|
           next if counts.empty?
           if type == :insufficiently_reserved_permanent || type == :unutilized_reserved
-            counts.sort_by { |instance, count| Rational(count) }.reverse.each do |instance, count|
+            counts.sort_by { |instance, count| count.to_f }.reverse.each do |instance, count|
               attachments.push({
                 color: color_severity(type, :hex),
                 fallback: "#{instance}: #{count}",
