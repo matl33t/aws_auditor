@@ -19,8 +19,8 @@ module SportNginAwsAuditor
                 @fully_reserved_permanent[i] = fraction
                 @insufficiently_reserved_permanent.delete(i)
               else
-                ri_count = 0
                 fraction.add(ri_count)
+                ri_count = 0
               end
 
               if ri_count == 0
@@ -38,9 +38,8 @@ module SportNginAwsAuditor
                 @fully_reserved_temporary[i] = fraction
                 @insufficiently_reserved_temporary.delete(i)
               else
-                ri_count = 0
                 fraction.add(ri_count)
-                break
+                ri_count = 0
               end
 
               if ri_count == 0
