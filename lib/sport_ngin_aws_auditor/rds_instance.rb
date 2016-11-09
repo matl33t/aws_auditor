@@ -1,14 +1,11 @@
-require_relative './instance_helper'
+require_relative './aws_instance'
 
 module SportNginAwsAuditor
-  class RDSInstance
-    extend InstanceHelper
+  class RDSInstance < AwsInstance
     extend RDSWrapper
     extend AWSWrapper
 
     class << self
-      attr_accessor :instances, :reserved_instances
-
       def get_instances(tag_name=nil)
         return @instances if @instances
         account_id = get_account_id
@@ -57,12 +54,28 @@ module SportNginAwsAuditor
       end
     end
 
-    def to_s
-      "#{engine} #{multi_az} #{instance_type}"
-    end
-
     def no_reserved_instance_tag_value
       tag_value
+    end
+
+    def to_s
+      fields.values.join(' ')
+    end
+
+    def hash
+      fields.hash
+    end
+
+    def eql?(other)
+      fields == other.fields
+    end
+
+    def fields
+      {
+        'Engine' => @engine,
+        'Availability Zone' => @multi_az,
+        'Instance Type' => @instance_type
+      }
     end
 
     # Generates a name based on the RDS engine or product description

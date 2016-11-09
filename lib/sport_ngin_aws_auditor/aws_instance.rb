@@ -53,13 +53,13 @@ module SportNginAwsAuditor
         temporary_instance_counts.each do |instance, instance_count|
           ri_count = reserved_instance_counts[instance] || 0
           if ri_count > instance_count
-            @fully_reserved_temporary[instance] = FractionalCount.new(instance_count, instance_count)
+            @fully_reserved_temporary[instance] = Fraction.new(instance_count, instance_count)
             reserved_instance_counts[instance] -= instance_count
           elsif ri_count > instance_count
-            @fully_reserved_temporary[instance] = FractionalCount.new(instance_count, instance_count)
+            @fully_reserved_temporary[instance] = Fraction.new(instance_count, instance_count)
             reserved_instance_counts.delete(instance)
           else
-            @insufficiently_reserved_temporary[instance] = FractionalCount.new(ri_count, instance_count)
+            @insufficiently_reserved_temporary[instance] = Fraction.new(ri_count, instance_count)
             reserved_instance_counts.delete(instance)
           end
         end

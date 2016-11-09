@@ -132,7 +132,7 @@ module SportNginAwsAuditor
       def self.rds_reserved_instances
         @rds_reserved_instances ||= RDSInstance.reserved_instance_hash
       end
-      
+
       def self.cache_instances
         @cache_instances ||= CacheInstance.instance_hash
       end

@@ -1,12 +1,57 @@
-require_relative './instance_helper'
+require_relative './aws_instance'
 
 module SportNginAwsAuditor
-  class EC2Instance
-    extend InstanceHelper
+  class EC2Instance < AwsInstance
     extend EC2Wrapper
 
     class << self
-      attr_accessor :instances, :reserved_instances
+      def calculate_differences(tag_name)
+        super(tag_name)
+
+        # postprocess on regional RIs that are left over
+        @unutilized_reserved.dup.each do |instance, ri_count|
+          if instance.availability_zone == 'Region' && ri_count > 0
+            # find matching insufficiently reserved permanent instances
+            @insufficiently_reserved_permanent.select { |_instance,v| instance.eql?(_instance, true) }.dup.each do |i, fraction|
+              if ri_count >= fraction.difference
+                ri_count -= fraction.difference
+                fraction.numerator = fraction.denominator
+                @fully_reserved_permanent[i] = fraction
+                @insufficiently_reserved_permanent.delete(i)
+              else
+                fraction.add(ri_count)
+                ri_count = 0
+              end
+
+              if ri_count == 0
+                @unutilized_reserved.delete(instance)
+                break
+              else
+                @unutilized_reserved[instance] = ri_count
+              end
+            end
+
+            @insufficiently_reserved_temporary.select { |_instance,v| instance.eql?(_instance, true) }.dup.each do |i, fraction|
+              if ri_count >= fraction.difference
+                ri_count -= fraction.difference
+                fraction.numerator = fraction.denominator
+                @fully_reserved_temporary[i] = fraction
+                @insufficiently_reserved_temporary.delete(i)
+              else
+                fraction.add(ri_count)
+                ri_count = 0
+              end
+
+              if ri_count == 0
+                @unutilized_reserved.delete(instance)
+                break
+              else
+                @unutilized_reserved[instance] = ri_count
+              end
+            end
+          end
+        end
+      end
 
       def get_instances(tag_name=nil)
         return @instances if @instances
@@ -58,10 +103,16 @@ module SportNginAwsAuditor
         self.id = ec2_instance.reserved_instances_id
         self.name = nil
         self.platform = platform_helper(ec2_instance.product_description)
-        self.availability_zone = ec2_instance.availability_zone
         self.instance_type = ec2_instance.instance_type
         self.count = count
         self.stack_name = nil
+
+
+        if ec2_instance.scope == 'Availability Zone'
+          self.availability_zone = ec2_instance.availability_zone
+        elsif ec2_instance.scope == 'Region'
+          self.availability_zone = 'Region'
+        end
       elsif ec2_instance.class.to_s == "Aws::EC2::Types::Instance"
         self.id = ec2_instance.instance_id
         self.name = nil
@@ -82,12 +133,34 @@ module SportNginAwsAuditor
       end
     end
 
-    def to_s
-      "#{platform} #{availability_zone} #{instance_type}"
-    end
-
     def no_reserved_instance_tag_value
       @tag_value
+    end
+
+    def to_s
+      fields.values.join(' ')
+    end
+
+    def hash
+      fields.hash
+    end
+
+    # Used to match Reserved Instances and EC2 Instances during comparison
+    def eql?(other, ignore_az = false)
+      if ignore_az
+        rm_az = lambda { |f| f.delete('Availability Zone'); f }
+        rm_az.call(fields) == rm_az.call(other.fields)
+      else
+        fields == other.fields
+      end
+    end
+
+    def fields
+      {
+        'Platform' => @platform,
+        'Availability Zone' => @availability_zone,
+        'Instance Type' => @instance_type,
+      }
     end
 
     def platform_helper(description, vpc=nil)
